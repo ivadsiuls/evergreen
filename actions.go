@@ -30,8 +30,13 @@ func versionFile(home string) string {
 	return fmt.Sprintf("%s/.local/share/evergreen/version", home)
 }
 
-// installPlayer downloads version into the prefix, replacing the Player that's there
-func installPlayer(ctx context.Context, home string, logger *zap.Logger, version util.APIVersion, progress util.ProgressFunc) error {
+// channelFile holds the beta channel the installed build is from, empty for the live one
+func channelFile(home string) string {
+	return fmt.Sprintf("%s/.local/share/evergreen/channel", home)
+}
+
+// installPlayer downloads build version into the prefix, replacing the Player that's there
+func installPlayer(ctx context.Context, home string, logger *zap.Logger, version, channel string, progress util.ProgressFunc) error {
 	if err := setup(home); err != nil {
 		return err
 	}
@@ -65,23 +70,70 @@ func installPlayer(ctx context.Context, home string, logger *zap.Logger, version
 		logger.Error("failed to move player into place", zap.Error(err))
 		return err
 	}
-	logger.Info("installed roblox player", zap.String("version", version.ClientVersionUpload))
-	return os.WriteFile(versionFile(home), []byte(version.ClientVersionUpload+"\n"), 0o644)
+	logger.Info("installed roblox player", zap.String("version", version), zap.String("channel", channel))
+	if err := os.WriteFile(channelFile(home), []byte(channel+"\n"), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(versionFile(home), []byte(version+"\n"), 0o644)
 }
 
-// installLatest installs the newest Player whether or not it's already installed
+// installLatest installs the newest Player whether or not it's already installed.
+// On a beta channel that's the installed build, since only the Player can find out about newer ones.
 func installLatest(ctx context.Context, home string, logger *zap.Logger, progress util.ProgressFunc) error {
+	if channel := installedChannel(home); channel != "" && playerInstalled(home) {
+		return installPlayer(ctx, home, logger, installedVersion(home), channel, progress)
+	}
 	progress("Checking version", 0, -1)
 	version, err := util.GetVersion(ctx, logger)
 	if err != nil {
 		return err
 	}
-	return installPlayer(ctx, home, logger, *version, progress)
+	return installPlayer(ctx, home, logger, version.ClientVersionUpload, "", progress)
 }
 
-// updatePlayer installs the newest Player when the installed one is missing or out of date.
+// requestedBuild returns the build the Player last asked its own updater for, if that happened after Evergreen's last install.
+// The updater can't install under rosemary (it crashes closing the menu bar app), but it logs the build and channel
+// first. Beta channels' builds can't be looked up without signing in, so this is the only way Evergreen learns them.
+func requestedBuild(home string) (version, channel string, ok bool) {
+	logs, _ := filepath.Glob(fmt.Sprintf("%s/root/Users/*/Library/Roblox/RobloxPlayerInstaller/InstallerInfo.log", prefixDir(home)))
+	installed, err := os.Stat(versionFile(home))
+	if len(logs) == 0 || err != nil {
+		return "", "", false
+	}
+	data, err := os.ReadFile(logs[0])
+	if err != nil {
+		return "", "", false
+	}
+	// lines look like "<unix time> IN_PROGRESS <pid> version-<guid> <channel>", the channel missing for live builds
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		fields := strings.Fields(lines[i])
+		if len(fields) < 4 || !strings.HasPrefix(fields[3], "version-") {
+			continue
+		}
+		at, err := strconv.ParseInt(fields[0], 10, 64)
+		if err != nil || at <= installed.ModTime().Unix() {
+			return "", "", false
+		}
+		if len(fields) > 4 {
+			channel = fields[4]
+		}
+		return fields[3], channel, true
+	}
+	return "", "", false
+}
+
+// updatePlayer installs the build Roblox wants when the installed one is missing or out of date.
 // Roblox only lets the current Player join games, but an installed one is still worth launching when Roblox can't be reached.
 func updatePlayer(ctx context.Context, home string, logger *zap.Logger, progress util.ProgressFunc) error {
+	if version, channel, ok := requestedBuild(home); ok && version != installedVersion(home) {
+		logger.Info("installing the build the player asked for", zap.String("version", version), zap.String("channel", channel))
+		return installPlayer(ctx, home, logger, version, channel, progress)
+	}
+	// the live version says nothing about a beta channel's build, the Player asks for those itself
+	if installedChannel(home) != "" && playerInstalled(home) {
+		return nil
+	}
 	progress("Checking for updates", 0, -1)
 	version, err := util.GetVersion(ctx, logger)
 	if err != nil {
@@ -94,7 +146,7 @@ func updatePlayer(ctx context.Context, home string, logger *zap.Logger, progress
 	if playerInstalled(home) && installedVersion(home) == version.ClientVersionUpload {
 		return nil
 	}
-	return installPlayer(ctx, home, logger, *version, progress)
+	return installPlayer(ctx, home, logger, version.ClientVersionUpload, "", progress)
 }
 
 // runPlayer runs the Player, handing it url (a roblox:// or roblox-player: link) when there is one
@@ -142,6 +194,15 @@ func unlockFPS(home string) error {
 // installedVersion returns the version Evergreen last installed, or "" if none
 func installedVersion(home string) string {
 	data, err := os.ReadFile(versionFile(home))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// installedChannel returns the beta channel of the installed build, or "" for the live one
+func installedChannel(home string) string {
+	data, err := os.ReadFile(channelFile(home))
 	if err != nil {
 		return ""
 	}

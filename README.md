@@ -46,6 +46,11 @@ The Player goes to `~/.local/share/rosemary/prefixes/default/root/Applications/R
 If the rosemary prefix doesn't exist yet, Evergreen creates it, which downloads
 rosemary's Darwin base (about 2 MB).
 
+If your account is in a Roblox beta program, the Player asks to restart into
+the beta's build. Roblox's own updater crashes under rosemary, but it logs
+which build it wanted before it does. Evergreen installs that build the next
+time you launch, so click the button, relaunch, and you're on the beta.
+
 Roblox and rosemary both stop at 60 FPS by default. Evergreen raises that to
 240 by setting `DFIntTaskSchedulerTargetFps` in the Player's
 `ClientAppSettings.json` (other flags in that file are kept) and by starting

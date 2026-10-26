@@ -67,10 +67,11 @@ func (p *progressReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
-// DownloadPlayer downloads the macOS Player and extracts RobloxPlayer.app into dest.
+// DownloadPlayer downloads build version of the macOS Player and extracts RobloxPlayer.app into dest.
 // The zip is spooled to a temporary file in tmpDir, since it is too big to hold in memory comfortably.
-func DownloadPlayer(ctx context.Context, logger *zap.Logger, version APIVersion, tmpDir, dest string, progress ProgressFunc) error {
-	url := fmt.Sprintf("https://setup.rbxcdn.com/mac/%s-RobloxPlayer.zip", version.ClientVersionUpload)
+func DownloadPlayer(ctx context.Context, logger *zap.Logger, version, tmpDir, dest string, progress ProgressFunc) error {
+	// channel/common has every build, beta channels' included, while mac/ only has the live ones
+	url := fmt.Sprintf("https://setup.rbxcdn.com/channel/common/mac/%s-RobloxPlayer.zip", version)
 	resp, err := get(ctx, url)
 	if err != nil {
 		logger.Error("failed to download roblox player", zap.Error(err))

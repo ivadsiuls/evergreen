@@ -340,6 +340,9 @@ func (g *gui) refresh() {
 	switch {
 	case !hasRoblox:
 		install, status = "Install Roblox", "Not installed"
+	case installedChannel(g.home) != "":
+		// the latest live version doesn't apply to a beta channel
+		install, status = "Reinstall Roblox", "On beta channel "+installedChannel(g.home)
 	case g.latest == "":
 		status = "Installed"
 	case installed == g.latest:
