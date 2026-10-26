@@ -15,7 +15,8 @@ func RunRosemary(ctx context.Context, log *zap.Logger, env []string, args ...str
 	stdout := &zapio.Writer{Log: log.Named("rosemary"), Level: zap.InfoLevel}
 	defer stdout.Close()
 
-	stderr := &zapio.Writer{Log: log.Named("rosemary"), Level: zap.ErrorLevel}
+	// rosemary and the Player report progress on stderr too, so it isn't a sign of failure
+	stderr := &zapio.Writer{Log: log.Named("rosemary"), Level: zap.InfoLevel}
 	defer stderr.Close()
 
 	cmd := exec.CommandContext(ctx, "rosemary", args...)
