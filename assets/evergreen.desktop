@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=Evergreen
+GenericName=Roblox Launcher
+Comment=Play Roblox on Linux through rosemary
+Exec=evergreen %u
+Icon=evergreen
+Terminal=false
+Categories=Game;
+Keywords=Roblox;Player;rosemary;
+MimeType=x-scheme-handler/roblox-player;x-scheme-handler/roblox;
+StartupNotify=true
+StartupWMClass=evergreen
+Actions=Configure;
+
+[Desktop Action Configure]
+Name=Configure Evergreen
+Exec=evergreen cfg
