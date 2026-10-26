@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -74,6 +75,14 @@ func installPlayer(ctx context.Context, home string, logger *zap.Logger, version
 	if err := os.WriteFile(channelFile(home), []byte(channel+"\n"), 0o644); err != nil {
 		return err
 	}
+	info, err := os.ReadFile(filepath.Join(app, "Contents", "Info.plist"))
+	if err != nil {
+		return err
+	}
+	checksum := fmt.Sprintf("%x", sha256.Sum256(info))
+	if err := os.WriteFile(filepath.Join(home, ".local/share/evergreen/bundle-checksum"), []byte(checksum), 0o644); err != nil {
+		return err
+	}
 	return os.WriteFile(versionFile(home), []byte(version+"\n"), 0o644)
 }
 
@@ -131,8 +140,12 @@ func updatePlayer(ctx context.Context, home string, logger *zap.Logger, progress
 		return installPlayer(ctx, home, logger, version, channel, progress)
 	}
 	// the live version says nothing about a beta channel's build, the Player asks for those itself
-	if installedChannel(home) != "" && playerInstalled(home) {
-		return nil
+	if channel := installedChannel(home); channel != "" && playerInstalled(home) {
+		if installedBuildIntact(home) {
+			return nil
+		}
+		logger.Info("restoring beta build replaced by Roblox's updater", zap.String("channel", channel))
+		return installPlayer(ctx, home, logger, installedVersion(home), channel, progress)
 	}
 	progress("Checking for updates", 0, -1)
 	version, err := util.GetVersion(ctx, logger)
@@ -143,7 +156,7 @@ func updatePlayer(ctx context.Context, home string, logger *zap.Logger, progress
 		}
 		return err
 	}
-	if playerInstalled(home) && installedVersion(home) == version.ClientVersionUpload {
+	if playerInstalled(home) && installedVersion(home) == version.ClientVersionUpload && installedBuildIntact(home) {
 		return nil
 	}
 	return installPlayer(ctx, home, logger, version.ClientVersionUpload, "", progress)
@@ -163,7 +176,7 @@ func runPlayer(ctx context.Context, home string, logger *zap.Logger, url string)
 	}
 	args := []string{"run", playerApp(home)}
 	if url != "" {
-		args = append(args, url)
+		args = append(args, playerLaunchURL(url, installedChannel(home)))
 	}
 	return util.RunRosemary(ctx, logger, env, args...)
 }
@@ -212,4 +225,37 @@ func installedChannel(home string) string {
 func playerInstalled(home string) bool {
 	_, err := os.Stat(playerApp(home))
 	return err == nil && installedVersion(home) != ""
+}
+
+// The website can send channel: with no value, which makes the Player replace a
+// beta build with production before it processes the game join.
+func playerLaunchURL(url, channel string) string {
+	if channel == "" || !strings.HasPrefix(url, "roblox-player:") {
+		return url
+	}
+	fields := strings.Split(url, "+")
+	found := false
+	for i, field := range fields {
+		if strings.HasPrefix(field, "channel:") {
+			fields[i] = "channel:" + channel
+			found = true
+		}
+	}
+	if !found {
+		fields = append(fields, "channel:"+channel)
+	}
+	return strings.Join(fields, "+")
+}
+
+// Roblox's own updater can overwrite the app without updating Evergreen's receipt.
+func installedBuildIntact(home string) bool {
+	checksum, err := os.ReadFile(filepath.Join(home, ".local/share/evergreen/bundle-checksum"))
+	if err != nil {
+		return false
+	}
+	info, err := os.ReadFile(filepath.Join(playerApp(home), "Contents", "Info.plist"))
+	if err != nil {
+		return false
+	}
+	return string(checksum) == fmt.Sprintf("%x", sha256.Sum256(info))
 }
