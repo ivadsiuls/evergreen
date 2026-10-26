@@ -46,6 +46,12 @@ The Player goes to `~/.local/share/rosemary/prefixes/default/root/Applications/R
 If the rosemary prefix doesn't exist yet, Evergreen creates it, which downloads
 rosemary's Darwin base (about 2 MB).
 
+Roblox and rosemary both stop at 60 FPS by default. Evergreen raises that to
+240 by setting `DFIntTaskSchedulerTargetFps` in the Player's
+`ClientAppSettings.json` (other flags in that file are kept) and by starting
+rosemary with `ROSEMARY_SCREEN_REFRESH_RATE=240`. Set that variable yourself to
+pick a different rate.
+
 ## License
 
 GPL v3, same as Everblue. See [LICENSE](LICENSE).

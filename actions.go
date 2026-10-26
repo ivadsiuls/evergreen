@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ivadsiuls/evergreen/util"
@@ -18,6 +22,9 @@ func prefixDir(home string) string {
 func playerApp(home string) string {
 	return fmt.Sprintf("%s/root/Applications/Roblox.app", prefixDir(home))
 }
+
+// targetFPS replaces the 60 FPS Roblox and rosemary settle on by default
+const targetFPS = 240
 
 func versionFile(home string) string {
 	return fmt.Sprintf("%s/.local/share/evergreen/version", home)
@@ -92,11 +99,44 @@ func updatePlayer(ctx context.Context, home string, logger *zap.Logger, progress
 
 // runPlayer runs the Player, handing it url (a roblox:// or roblox-player: link) when there is one
 func runPlayer(ctx context.Context, home string, logger *zap.Logger, url string) error {
+	if err := unlockFPS(home); err != nil {
+		logger.Error("failed to write client settings", zap.Error(err))
+		return err
+	}
+	// rosemary fires the Player's display link, which it paces frames by, at the screen's refresh rate.
+	// Reporting a faster screen lifts that limit, unless the user picked a rate of their own.
+	var env []string
+	if os.Getenv("ROSEMARY_SCREEN_REFRESH_RATE") == "" {
+		env = append(env, "ROSEMARY_SCREEN_REFRESH_RATE="+strconv.Itoa(targetFPS))
+	}
 	args := []string{"run", playerApp(home)}
 	if url != "" {
 		args = append(args, url)
 	}
-	return util.RunRosemary(ctx, logger, nil, args...)
+	return util.RunRosemary(ctx, logger, env, args...)
+}
+
+// unlockFPS raises Roblox's own frame cap through its ClientAppSettings.json, keeping any other flags in it
+func unlockFPS(home string) error {
+	path := fmt.Sprintf("%s/Contents/MacOS/ClientSettings/ClientAppSettings.json", playerApp(home))
+	flags := map[string]any{}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if err := json.Unmarshal(data, &flags); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	flags["DFIntTaskSchedulerTargetFps"] = targetFPS
+	data, err = json.MarshalIndent(flags, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
 // installedVersion returns the version Evergreen last installed, or "" if none
