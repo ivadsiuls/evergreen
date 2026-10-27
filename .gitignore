@@ -1,1 +1,4 @@
 /evergreen
+
+/native/*.so
+/native/test-bin/

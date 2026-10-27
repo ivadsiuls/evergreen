@@ -18,16 +18,16 @@ which runs the macOS app.
 
 - [rosemary](https://github.com/microlift/rosemary) on your `PATH`.
 - Go 1.27 or newer.
-- Qt 6 development files, a C++ compiler and `pkg-config`, for the
+- SDL3 development files, a C/C++ compiler and `pkg-config`.
+- Qt 6 development files for the
   [miqt](https://github.com/mappu/miqt) bindings.
 
 ## Building and installing
 
 ```sh
-go build -o evergreen .
-install -Dm755 evergreen ~/.local/bin/evergreen
-install -Dm644 assets/evergreen.desktop ~/.local/share/applications/evergreen.desktop
-install -Dm644 assets/evergreen.svg ~/.local/share/icons/hicolor/scalable/apps/evergreen.svg
+make
+make test
+make install
 xdg-mime default evergreen.desktop x-scheme-handler/roblox-player x-scheme-handler/roblox
 ```
 
@@ -58,6 +58,13 @@ Roblox and rosemary both stop at 60 FPS by default. Evergreen raises that to
 `ClientAppSettings.json` (other flags in that file are kept) and by starting
 rosemary with `ROSEMARY_SCREEN_REFRESH_RATE=240`. Set that variable yourself to
 pick a different rate.
+
+Held keys send one physical press and one release to the Player. Evergreen
+filters SDL's repeated key-down events so they cannot reset hold-to-activate
+prompts. Separate text-input events are kept, but text fields that rely on
+repeated key-downs may no longer repeat characters when a key is held. Set
+`EVERGREEN_KEY_REPEAT=1` to restore the original behavior. This filter applies
+only to rosemary processes launched by Evergreen.
 
 ## License
 

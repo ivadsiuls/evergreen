@@ -174,6 +174,23 @@ func runPlayer(ctx context.Context, home string, logger *zap.Logger, url string)
 	if os.Getenv("ROSEMARY_SCREEN_REFRESH_RATE") == "" {
 		env = append(env, "ROSEMARY_SCREEN_REFRESH_RATE="+strconv.Itoa(targetFPS))
 	}
+	// Auto-repeat is text behavior, not a new physical press. Some Player input
+	// paths turn repeated key-downs into new holds and reset proximity prompts.
+	if os.Getenv("EVERGREEN_KEY_REPEAT") != "1" {
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		filter := filepath.Clean(filepath.Join(filepath.Dir(executable), "../lib/evergreen/input-filter.so"))
+		if _, err := os.Stat(filter); err != nil {
+			return fmt.Errorf("input filter is missing: run make install: %w", err)
+		}
+		preload := filter
+		if existing := os.Getenv("LD_PRELOAD"); existing != "" {
+			preload += ":" + existing
+		}
+		env = append(env, "LD_PRELOAD="+preload)
+	}
 	args := []string{"run", playerApp(home)}
 	if url != "" {
 		args = append(args, playerLaunchURL(url, installedChannel(home)))
